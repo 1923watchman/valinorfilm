@@ -2,6 +2,7 @@ const express = require('express');
 const http = require('http');
 const { Server } = require('socket.io');
 const path = require('path');
+const fs = require('fs');
 
 const app = express();
 const server = http.createServer(app);
@@ -12,10 +13,28 @@ const io = new Server(server, {
   }
 });
 
-app.use(express.static(path.join(__dirname, 'public')));
+// Serve static files from 'public' directory if it exists, otherwise from root directory
+const publicPath = path.join(__dirname, 'public');
+if (fs.existsSync(publicPath)) {
+  app.use(express.static(publicPath));
+}
+app.use(express.static(__dirname));
+
+// Fallback handler to serve index.html regardless of folder structure
+app.get('*', (req, res) => {
+  const publicIndex = path.join(__dirname, 'public', 'index.html');
+  const rootIndex = path.join(__dirname, 'index.html');
+
+  if (fs.existsSync(publicIndex)) {
+    res.sendFile(publicIndex);
+  } else if (fs.existsSync(rootIndex)) {
+    res.sendFile(rootIndex);
+  } else {
+    res.status(404).send('index.html dosyası bulunamadı. Lütfen public/index.html dosyasını kontrol edin.');
+  }
+});
 
 // Store active rooms and participants
-// roomId -> Map(socketId -> { username, micOn, cameraOn, isSharingScreen })
 const rooms = new Map();
 
 io.on('connection', (socket) => {
@@ -45,11 +64,9 @@ io.on('connection', (socket) => {
 
     roomUsers.set(socket.id, userInfo);
 
-    // Send existing users list to the newly joined user
     const existingUsers = Array.from(roomUsers.values()).filter(u => u.socketId !== socket.id);
     socket.emit('room-users', existingUsers);
 
-    // Notify others in room that a user joined
     socket.to(roomId).emit('user-joined', userInfo);
 
     console.log(`[Room ${roomId}] ${currentUsername} (${socket.id}) odaya katıldı. Toplam: ${roomUsers.size}`);
@@ -60,7 +77,7 @@ io.on('connection', (socket) => {
     io.to(targetSocketId).emit('signal', {
       callerSocketId: socket.id,
       signalData,
-      type // 'screen' or 'cam'
+      type
     });
   });
 
@@ -128,7 +145,7 @@ server.listen(PORT, () => {
   ======================================================
   🎬 VALINOR FILM - Birlikte Film İzleme Platformu 🎬
   ======================================================
-  📍 Sunucu Yayında: http://localhost:${PORT}
+  📍 Sunucu Yayında: Port ${PORT}
   🚀 Ekran Paylaşımı & Görüşme Hazır!
   ======================================================
   `);
